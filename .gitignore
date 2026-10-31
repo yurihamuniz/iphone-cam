@@ -1,0 +1,5 @@
+*.xcodeproj/
+IPhoneCam/Info.plist
+build/
+Payload/
+*.ipa

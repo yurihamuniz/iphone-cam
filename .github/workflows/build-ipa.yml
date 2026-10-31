@@ -1,0 +1,50 @@
+# Compila o .ipa SEM assinatura num Mac do GitHub. A assinatura acontece no Windows, pelo Sideloadly,
+# com o Apple ID do Yuri. Nada é publicado: o .ipa fica só como artifact da execução (14 dias).
+# Pressupõe que iphone-app/ é a raiz do repositório.
+name: build-ipa
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md"]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Gerar o projeto Xcode
+        run: |
+          HOMEBREW_NO_AUTO_UPDATE=1 brew install xcodegen
+          xcodegen generate
+
+      - name: Compilar
+        run: |
+          set -o pipefail
+          xcodebuild -version
+          xcodebuild -project IPhoneCam.xcodeproj -scheme IPhoneCam \
+            -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build | tee build.log
+
+      - name: Empacotar .ipa
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/IPhoneCam.app Payload/
+          zip -qry IPhoneCam.ipa Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: IPhoneCam-ipa
+          path: IPhoneCam.ipa
+          retention-days: 14
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: build-log
+          path: build.log

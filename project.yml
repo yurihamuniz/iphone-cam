@@ -1,0 +1,31 @@
+# Projeto Xcode descrito em texto. O XcodeGen gera o .xcodeproj no runner macOS (GitHub Actions).
+name: IPhoneCam
+options:
+  bundleIdPrefix: com.yurimuniz
+  deploymentTarget:
+    iOS: "16.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  IPhoneCam:
+    type: application
+    platform: iOS
+    sources: [IPhoneCam]
+    scheme: {}
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.yurimuniz.iphonecam
+        PRODUCT_NAME: IPhoneCam
+        TARGETED_DEVICE_FAMILY: "1"
+    info:
+      path: IPhoneCam/Info.plist
+      properties:
+        CFBundleDisplayName: iPhone Cam
+        UILaunchScreen: {}
+        UIRequiresFullScreen: true
+        UIStatusBarHidden: true
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationLandscapeRight]
+        NSCameraUsageDescription: Captura a câmera para enviar ao PC pelo cabo.
