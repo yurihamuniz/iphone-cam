@@ -5,9 +5,13 @@ import Foundation
 enum Packet {
     static let magic = Data("IPCM".utf8)
 
+    static let commandType: UInt8 = 3
+    /// Comando é JSON curto; mais que isso é lixo na conexão.
+    private static let maxCommandBytes = 64 * 1024
+
     static func config(_ config: StreamConfig) -> Data {
         let json: [String: Any] = [
-            "proto": 1,
+            "proto": 2,
             "codec": config.codec.wireName,
             "width": Int(config.resolution.width),
             "height": Int(config.resolution.height),
@@ -21,6 +25,28 @@ enum Packet {
     static func video(_ frame: EncodedFrame) -> Data {
         let micros = CMTimeConvertScale(frame.pts, timescale: 1_000_000, method: .roundHalfAwayFromZero).value
         return self.frame(type: 2, flags: frame.isKeyframe ? 1 : 0, pts: micros, frame.data)
+    }
+
+    /// Tira de `buffer` os pacotes completos que o PC mandou e devolve os comandos (tipo 3) em JSON.
+    /// O que ainda não chegou inteiro fica no buffer pra próxima leitura.
+    static func commands(from buffer: inout Data) -> [[String: Any]] {
+        var commands: [[String: Any]] = []
+        while buffer.count >= 16 {
+            let start = buffer.startIndex
+            let size = buffer[start + 4 ..< start + 8].reduce(0) { $0 << 8 | Int($1) }
+            guard size <= maxCommandBytes else {
+                buffer.removeAll()
+                break
+            }
+            guard buffer.count >= 16 + size else { break }
+            let type = buffer[start]
+            let body = buffer.subdata(in: start + 16 ..< start + 16 + size)
+            buffer.removeSubrange(start ..< start + 16 + size)
+            if type == commandType, let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                commands.append(json)
+            }
+        }
+        return commands
     }
 
     /// Cabeçalho de 16 bytes, big-endian: tipo, flags, 2 reservados, tamanho (u32), pts em µs (i64).

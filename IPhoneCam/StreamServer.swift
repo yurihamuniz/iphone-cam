@@ -13,6 +13,8 @@ final class StreamServer {
     var onKeyframeNeeded: (() -> Void)?
     var onStats: ((_ fps: Double, _ mbps: Double) -> Void)?
     var onError: ((String) -> Void)?
+    /// Comando do PC (protocolo, tipo 3). Chega na fila do servidor.
+    var onCommand: (([String: Any]) -> Void)?
 
     private let queue = DispatchQueue(label: "stream.server")
     private let lock = NSLock()
@@ -22,6 +24,7 @@ final class StreamServer {
     private var listener: NWListener?
     private var connection: NWConnection?
     private var pendingBytes = 0
+    private var incoming = Data()
     private var waitingForKeyframe = true
     private var statFrames = 0
     private var statBytes = 0
@@ -74,6 +77,7 @@ final class StreamServer {
         connection?.cancel()
         connection = newConnection
         pendingBytes = 0
+        incoming.removeAll()
         waitingForKeyframe = true
 
         newConnection.stateUpdateHandler = { [weak self, weak newConnection] state in
@@ -93,14 +97,19 @@ final class StreamServer {
         newConnection.start(queue: queue)
     }
 
-    /// Por enquanto o PC não manda nada; ler serve pra notar quando ele fecha.
+    /// Lê os comandos do PC e nota quando ele fecha.
     private func receive(on connection: NWConnection) {
-        connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) { [weak self] _, _, isComplete, error in
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) { [weak self] data, _, isComplete, error in
+            guard let self else { return }
+            if let data, !data.isEmpty, self.connection === connection {
+                self.incoming.append(data)
+                for command in Packet.commands(from: &self.incoming) { self.onCommand?(command) }
+            }
             if isComplete || error != nil {
                 connection.cancel()
                 return
             }
-            self?.receive(on: connection)
+            self.receive(on: connection)
         }
     }
 

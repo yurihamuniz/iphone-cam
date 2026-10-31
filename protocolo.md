@@ -1,4 +1,4 @@
-# Protocolo v0 · iPhone → PC pelo cabo
+# Protocolo · iPhone ↔ PC pelo cabo
 
 Contrato entre o app (`iphone-app/`) e o gravador (`receptor/`). Mudou aqui, avisa o receptor.
 
@@ -7,7 +7,7 @@ Contrato entre o app (`iphone-app/`) e o gravador (`receptor/`). Mudou aqui, avi
 - O PC chega lá pelo usbmux (Apple Mobile Device Service). Teste rápido com o `pymobiledevice3`:
   `pymobiledevice3 usbmux forward 7878 7878` e conectar em `127.0.0.1:7878` no PC.
 - Um PC por vez. Conexão nova derruba a anterior.
-- Só o iPhone fala. O que o PC mandar é ignorado (reservado pra controle no futuro).
+- O iPhone manda vídeo; o PC manda comandos (tipo 3, desde o `proto` 2). App com `proto` 1 ignora comando.
 
 ## Fluxo
 1. `IPCM` (4 bytes ASCII) logo ao conectar.
@@ -20,17 +20,29 @@ Contrato entre o app (`iphone-app/`) e o gravador (`receptor/`). Mudou aqui, avi
 
 | byte | tamanho | campo |
 |---|---|---|
-| 0 | 1 | tipo: 1 = config, 2 = vídeo |
+| 0 | 1 | tipo: 1 = config, 2 = vídeo (iPhone → PC); 3 = comando (PC → iPhone) |
 | 1 | 1 | flags: bit 0 = quadro-chave |
 | 2 | 2 | reservado (0) |
 | 4 | 4 | tamanho do payload (u32) |
 | 8 | 8 | PTS em microssegundos (i64), 0 no primeiro quadro da conexão |
 | 16 | N | payload |
 
-- **Config**: JSON UTF-8, ex.: `{"bitrate":60000000,"codec":"hevc","fps":30,"height":2160,"proto":1,"width":3840}`.
+- **Config**: JSON UTF-8, ex.: `{"bitrate":60000000,"codec":"hevc","fps":30,"height":2160,"proto":2,"width":3840}`.
   `codec` é `h264` ou `hevc`.
 - **Vídeo**: um quadro em Annex B (NALs com `00 00 00 01`). Quadro-chave traz VPS/SPS/PPS na frente.
   Sem B-frames: PTS = DTS, ordem de chegada = ordem de exibição.
+
+## Comandos do PC (tipo 3, `proto` 2)
+Mesmo cabeçalho, PTS 0, payload JSON. Todos os campos são opcionais e podem vir juntos.
+
+| campo | valores | o que o iPhone faz |
+|---|---|---|
+| `gravando` | `true` / `false` | liga ou apaga a luz do flash traseiro e o REC na tela, toca o som de gravar. `true` força quadro-chave no próximo quadro |
+| `luz` | `"fixa"` / `"piscar"` / `"desligada"` | como a luz traseira se comporta enquanto grava (padrão `fixa`, nível baixo) |
+| `config` | `{"resolucao": "1080p" ou "4K", "fps": 30 ou 60, "codec": "h264" ou "hevc"}` | troca a captura, como se fosse na tela. Responde com config novo |
+
+Ex.: `{"config":{"resolucao":"4K","fps":30,"codec":"hevc"}}`, `{"gravando":true}`.
+Se o PC desconecta, o iPhone apaga a luz.
 
 ## O que o receptor faz com isso
 - Gravar sem re-encode: payloads em sequência formam um `.h264`/`.h265` válido; o PTS de cada pacote

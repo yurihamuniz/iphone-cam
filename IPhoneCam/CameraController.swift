@@ -1,3 +1,4 @@
+import AudioToolbox
 import AVFoundation
 import Foundation
 
@@ -34,11 +35,18 @@ final class CameraController: NSObject, ObservableObject {
     }
     @Published private(set) var status = "Iniciando"
     @Published private(set) var stats = ""
+    /// O PC está gravando (comando do PC). Acende a luz traseira e o REC na tela.
+    @Published private(set) var recording = false
+    @Published private(set) var recordingSince: Date?
+    @Published var lightMode = LightMode.fixa {
+        didSet { if lightMode != oldValue { let mode = lightMode; captureQueue.async { self.tally.set(mode: mode) } } }
+    }
 
     let session = AVCaptureSession()
     private let server = StreamServer()
     private let output = AVCaptureVideoDataOutput()
     private let captureQueue = DispatchQueue(label: "camera.capture")
+    private lazy var tally = Tally(queue: captureQueue)
 
     // Só mexidos na captureQueue.
     private var applied = StreamConfig()
@@ -57,7 +65,15 @@ final class CameraController: NSObject, ObservableObject {
                 if connected { self.server.sendConfig(Packet.config(self.applied)) }
             }
             self.publish(status: connected ? "Enviando pro PC" : waiting)
-            if !connected { DispatchQueue.main.async { self.stats = "" } }
+            if !connected {
+                DispatchQueue.main.async {
+                    self.stats = ""
+                    self.setRecording(false)
+                }
+            }
+        }
+        server.onCommand = { [weak self] command in
+            DispatchQueue.main.async { self?.handle(command) }
         }
         server.onKeyframeNeeded = { [weak self] in
             self?.captureQueue.async { self?.keyframeRequested = true }
@@ -84,6 +100,41 @@ final class CameraController: NSObject, ObservableObject {
                 self.configure(initial)
                 self.session.startRunning()
             }
+        }
+    }
+
+    /// Comandos do PC (protocolo.md, tipo 3). Roda na main.
+    private func handle(_ command: [String: Any]) {
+        if let mode = (command["luz"] as? String).flatMap(LightMode.init(rawValue:)) {
+            lightMode = mode
+        }
+        if let wanted = command["config"] as? [String: Any] {
+            var next = config
+            if let resolution = (wanted["resolucao"] as? String).flatMap(Resolution.init(rawValue:)) {
+                next.resolution = resolution
+            }
+            if let name = wanted["codec"] as? String, let codec = Codec.allCases.first(where: { $0.wireName == name }) {
+                next.codec = codec
+            }
+            if let fps = wanted["fps"] as? Int, [30, 60].contains(fps) {
+                next.fps = fps
+            }
+            config = next
+        }
+        if let recording = command["gravando"] as? Bool {
+            setRecording(recording)
+        }
+    }
+
+    /// Roda na main.
+    private func setRecording(_ on: Bool) {
+        guard on != recording else { return }
+        recording = on
+        recordingSince = on ? Date() : nil
+        AudioServicesPlaySystemSound(on ? 1117 : 1118)  // sons de começar e parar vídeo do iOS
+        captureQueue.async {
+            if on { self.keyframeRequested = true }  // o arquivo do PC começa num quadro-chave
+            self.tally.set(active: on)
         }
     }
 
@@ -148,6 +199,8 @@ final class CameraController: NSObject, ObservableObject {
         firstPTS = nil
         keyframeRequested = true
         if server.hasClient { server.sendConfig(Packet.config(config)) }
+        // Depois do commit: trocar o formato pode ter apagado a luz.
+        captureQueue.async { self.tally.set(device: device) }
     }
 
     /// Primeiro formato 8 bits com o tamanho e o fps pedidos.

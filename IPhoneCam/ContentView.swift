@@ -9,6 +9,12 @@ struct ContentView: View {
             CameraPreview(session: camera.session)
                 .ignoresSafeArea()
 
+            if camera.recording, let since = camera.recordingSince {
+                RecordingBadge(since: since)
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .padding(.top, 12)
+            }
+
             VStack(spacing: 8) {
                 Text(camera.status).font(.headline)
                 if !camera.stats.isEmpty {
@@ -24,9 +30,12 @@ struct ContentView: View {
                     Picker("FPS", selection: $camera.config.fps) {
                         ForEach([30, 60], id: \.self) { Text("\($0) fps").tag($0) }
                     }
+                    Picker("Luz", selection: $camera.lightMode) {
+                        ForEach(LightMode.allCases) { Text($0.label).tag($0) }
+                    }
                 }
                 .pickerStyle(.segmented)
-                .frame(maxWidth: 640)
+                .frame(maxWidth: 820)
             }
             .padding()
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
@@ -36,6 +45,26 @@ struct ContentView: View {
         .onAppear {
             UIApplication.shared.isIdleTimerDisabled = true
             camera.start()
+        }
+    }
+}
+
+/// REC com o tempo, enquanto o PC grava.
+struct RecordingBadge: View {
+    let since: Date
+
+    var body: some View {
+        TimelineView(.periodic(from: since, by: 1)) { context in
+            let seconds = max(0, Int(context.date.timeIntervalSince(since)))
+            HStack(spacing: 8) {
+                Circle().fill(.red).frame(width: 12, height: 12)
+                Text(String(format: "REC %02d:%02d", seconds / 60, seconds % 60))
+                    .font(.headline.monospacedDigit())
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(.black.opacity(0.6), in: Capsule())
+            .foregroundStyle(.white)
         }
     }
 }
